@@ -27,49 +27,41 @@ definition(
     singleInstance: true)
 
 preferences {
-	page(name: "auth", title: "Remotsy", nextPage:"", content:"authPage", uninstall: true, install:true)
+    page(name: "Credentials", title: "Remotsy", content: "authPage", install: false)
 }
 
 mappings {
-    path("/oauth/initialize") {action: [GET: "oauthInitUrl"]}
-    path("/oauth/callback") {action: [GET: "callback"]}
+	path("/receivedToken") 	{ action: [ POST: "receivedToken", GET: "receivedToken"] }
+	path("/receiveToken") 	{ action: [ POST: "receiveToken", GET: "receiveToken"] }
 }
 
 private getVendorName() 	{ "Remotsy" }
-private getVendorAuthPath()	{ "https://www.remotsy.com/oauth/authorize?" }
-private getVendorTokenPath(){ "https://www.remotsy.com/oauth/token.php?" }
+private getVendorAuthPath()	{ "https://www.remotsy.com:8443/oauth/authorize?" }
+private getVendorTokenPath(){ "https://www.remotsy.com:8443/oauth/token" }
 private getClientId() 		{ "smartthings" } 
 private getClientSecret() 	{ "kjgsdfslskudfgj" }
-private getCallbackUrl()    { return "https://graph.api.smartthings.com/oauth/callback" }
-String toQueryString(Map m) {
-        return m.collect { k, v -> "${k}=${URLEncoder.encode(v.toString())}" }.sort().join("&")
-}
+private getVendorIcon()		{ "https://s3.amazonaws.com/smartthings-device-icons/custom/super-widgets/beertap@2x.png" }
+private getServerUrl() 		{ return "https://graph-na04-useast2.api.smartthings.com" }
+
 
 
 def authPage() {
-   // Check to see if our SmartApp has it's own access token and create one if not.
-    if(!state.accessToken) {
-        // the createAccessToken() method will store the access token in state.accessToken
+	log.debug "In authPage"
+    def description = null  
+    if (state.vendorAccessToken == null) {   
+        log.debug "About to create access token."
         createAccessToken()
-    }
-    log.debug state.authToken
-    def redirectUrl = "https://graph.api.smartthings.com/oauth/initialize?appId=${app.id}&access_token=${state.accessToken}&apiServerUrl=${getApiServerUrl()}"
-    // Check to see if we already have an access token from the 3rd party service.
-    if(!state.authToken) {
-		return dynamicPage(name:"auth", title: "Login", nextPage: "", uninstall:uninstallAllowed) {
-			section() {
-				paragraph "Tap below to log in to the Remotsy service and authorize SmartThings access. Be sure to scroll down on page 2 and press the 'Allow' button."
-				href url:redirectUrl, style:"embedded", required:true, title:"Remotsy", description:description
-			}
-		}
+        description = "Tap to enter Credentials."
+        def redirectUrl = oauthInitUrl()
+        return dynamicPage(name: "Credentials", title: "Authorize Connection", nextPage: null, uninstall: false, install:false) {
+               section { href url:redirectUrl, style:"embedded", required:false, title:"Connect to ${getVendorName()}:", description:description }
+        }
     } else {
-    	return dynamicPage(name: "auth", title: "Ok", nextPage: "", uninstall:uninstallAllowed) {
-			section() {
-				paragraph "Hope"
-				
-			}
-		}
-        // We have the token, so we can just call the 3rd party service to list our devices and select one to install.
+    	description = "Press 'Done' to proceed" 
+ 		
+		return dynamicPage(name: "Credentials", title: "Credentials Accepted!", nextPage: null, uninstall: true, install:true) {
+               section { href url: buildRedirectUrl("receivedToken"), style:"embedded", required:false, title:"${getVendorName()} is now connected to SmartThings!", description:description }
+        }
     }
 }
 
@@ -81,80 +73,179 @@ def oauthInitUrl() {
         client_id: getClientId(),
         client_secret: getClientSecret(),
         state: state.oauthInitState,
-        redirect_uri: getCallbackUrl()
+        redirect_uri: buildRedirectUrl("receiveToken")
     ]
-    redirect(location: getVendorAuthPath() + "${toQueryString(oauthParams)}")
+    return getVendorAuthPath() + toQueryString(oauthParams)
 }
 
+def buildRedirectUrl(endPoint) {
+	log.debug "In buildRedirectUrl"
+    log.debug getServerUrl()+ "/api/token/${state.accessToken}/smartapps/installations/${app.id}/${endPoint}"
+    return getServerUrl() + "/api/token/${state.accessToken}/smartapps/installations/${app.id}/${endPoint}"
+}
 
-def callback() {
-    def code = params.code
-    def oauthState = params.state
-
-    // Validate the response from the 3rd party by making sure oauthState == state.oauthInitState as expected
-    if (oauthState == state.oauthInitState){
-        def tokenParams = [
-            grant_type: "authorization_code",
-            code      : code,
-            client_id : getClientId(),
-            client_secret: getClientSecret(),
-            redirect_uri: getCallbackUrl()
-        ]
-        
-        try {
-    		httpPost(getVendorTokenPath(), toQueryString(tokenParams)) { resp ->
-        	log.debug "response data: ${resp.data}"
-        	log.debug "response contentType: ${resp.contentType}"
-            state.refreshToken = resp.data.refresh_token
-            state.authToken = resp.data.access_token
-    	}
-		} catch (e) {
-    		log.debug "something went wrong: $e"
-		}
-
-        if (state.authToken) {
-            // call some method that will render the successfully connected message
-            success()
-        } else {
-            // gracefully handle failures
-            fail()
-        }
-
-    } else {
-        log.error "callback() failed. Validation of state did not match. oauthState != state.oauthInitState"
+def receiveToken() {
+	log.debug "In receiveToken"
+    def oauthParams = [ client_id: getClientId(),
+                        client_secret: getClientSecret(),
+    				    grant_type: "authorization_code", 
+                        code: params.code,
+                        redirect_uri: buildRedirectUrl("receiveToken")]                        
+	httpPost(getVendorTokenPath(), toQueryString(oauthParams)) { response -> 
+    	state.vendorRefreshToken = response.data.refresh_token
+        state.vendorAccessToken = response.data.access_token
+	}
+     
+    if ( !state.vendorAccessToken ) {  //We didn't get an access token, bail on install
+    	return
     }
-}
-
-// Example success method
-def success() {
-        def message = """
-                <p>Your account is now connected to SmartThings!</p>
-                <p>Click 'Done' to finish setup.</p>
-        """
-        displayMessageAsHtml(message)
-}
-
-// Example fail method
-def fail() {
-    def message = """
-        <p>There was an error connecting your account with SmartThings</p>
-        <p>Please try again.</p>
-    """
-    displayMessageAsHtml(message)
-}
-
-def displayMessageAsHtml(message) {
+    
+    /* OAuth Step 3: Use the access token to call into the vendor API throughout your code using state.vendorAccessToken. */
+       
     def html = """
         <!DOCTYPE html>
         <html>
-            <head>
-            </head>
-            <body>
-                <div>
-                    ${message}
-                </div>
-            </body>
+        <head>
+        <meta name=viewport content="width=300px, height=100%">
+        <title>${getVendorName()} Connection</title>
+        <style type="text/css">
+            @font-face {
+                font-family: 'Swiss 721 W01 Thin';
+                src: url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-thin-webfont.eot');
+                src: url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-thin-webfont.eot?#iefix') format('embedded-opentype'),
+                     url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-thin-webfont.woff') format('woff'),
+                     url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-thin-webfont.ttf') format('truetype'),
+                     url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-thin-webfont.svg#swis721_th_btthin') format('svg');
+                font-weight: normal;
+                font-style: normal;
+            }
+            @font-face {
+                font-family: 'Swiss 721 W01 Light';
+                src: url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-light-webfont.eot');
+                src: url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-light-webfont.eot?#iefix') format('embedded-opentype'),
+                     url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-light-webfont.woff') format('woff'),
+                     url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-light-webfont.ttf') format('truetype'),
+                     url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-light-webfont.svg#swis721_lt_btlight') format('svg');
+                font-weight: normal;
+                font-style: normal;
+            }
+            .container {
+                width: 560px;
+                padding: 0px;
+                /*background: #eee;*/
+                text-align: center;
+            }
+            img {
+                vertical-align: middle;
+            }
+            img:nth-child(2) {
+                margin: 0 30px;
+            }
+            p {
+                font-size: 2.2em;
+                font-family: 'Swiss 721 W01 Thin';
+                text-align: center;
+                color: #666666;
+                padding: 0 40px;
+                margin-bottom: 0;
+            }
+        /*
+            p:last-child {
+                margin-top: 0px;
+            }
+        */
+            span {
+                font-family: 'Swiss 721 W01 Light';
+            }
+        </style>
+        </head>
+        <body>
+            <div class="container">
+                <img src=""" + getVendorIcon() + """ alt="Vendor icon" />
+                <img src="https://s3.amazonaws.com/smartapp-icons/Partner/support/connected-device-icn%402x.png" alt="connected device icon" />
+                <img src="https://s3.amazonaws.com/smartapp-icons/Partner/support/st-logo%402x.png" alt="SmartThings logo" />
+                <p>We have located your """ + getVendorName() + """ account.</p>
+                <p>Tap 'Done' to process your credentials.</p>
+			</div>
+        </body>
         </html>
-    """
-    render contentType: 'text/html', data: html
+        """
+	render contentType: 'text/html', data: html
+}
+
+def receivedToken() {
+	log.debug "In receivedToken"
+    
+    def html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta name="viewport" content="100%">
+        <title>Withings Connection</title>
+        <style type="text/css">
+            @font-face {
+                font-family: 'Swiss 721 W01 Thin';
+                src: url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-thin-webfont.eot');
+                src: url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-thin-webfont.eot?#iefix') format('embedded-opentype'),
+                     url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-thin-webfont.woff') format('woff'),
+                     url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-thin-webfont.ttf') format('truetype'),
+                     url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-thin-webfont.svg#swis721_th_btthin') format('svg');
+                font-weight: normal;
+                font-style: normal;
+            }
+            @font-face {
+                font-family: 'Swiss 721 W01 Light';
+                src: url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-light-webfont.eot');
+                src: url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-light-webfont.eot?#iefix') format('embedded-opentype'),
+                     url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-light-webfont.woff') format('woff'),
+                     url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-light-webfont.ttf') format('truetype'),
+                     url('https://s3.amazonaws.com/smartapp-icons/Partner/fonts/swiss-721-light-webfont.svg#swis721_lt_btlight') format('svg');
+                font-weight: normal;
+                font-style: normal;
+            }
+            .container {
+                width: 100%;
+                padding: 0px;
+                /*background: #eee;*/
+                text-align: center;
+            }
+            img {
+                vertical-align: middle;
+            }
+            img:nth-child(2) {
+                margin: 0 10px;
+            }
+            p {
+                font-size: 1.5em;
+                font-family: 'Swiss 721 W01 Thin';
+                text-align: center;
+                color: #666666;
+                padding: 0 40px;
+                margin-bottom: 0;
+            }
+        /*
+            p:last-child {
+                margin-top: 0px;
+            }
+        */
+            span {
+                font-family: 'Swiss 721 W01 Light';
+            }
+        </style>
+        </head>
+        <body>
+            <div class="container">
+                <img src=""" + getVendorIcon() + """ alt="Vendor icon" style="width: 30%;max-height: 30%"/>
+                <img src="https://s3.amazonaws.com/smartapp-icons/Partner/support/connected-device-icn%402x.png" alt="connected device icon" style="width: 10%;max-height: 10%"/>
+                <img src="https://s3.amazonaws.com/smartapp-icons/Partner/support/st-logo%402x.png" alt="SmartThings logo" style="width: 30%;max-height: 30%"/>
+                <p>Your Quirky account is now connected to SmartThings. Tap 'Done' to continue to choose devices.</p>
+			</div>
+        </body>
+        </html>
+        """
+	render contentType: 'text/html', data: html
+}
+
+String toQueryString(Map m) {
+        return m.collect { k, v -> "${k}=${URLEncoder.encode(v.toString())}" }.sort().join("&")
 }
