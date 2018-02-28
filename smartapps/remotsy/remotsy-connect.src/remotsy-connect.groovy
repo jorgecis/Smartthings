@@ -1,7 +1,7 @@
 /**
- *  Remotsy
+ *  Remotsy Manager
  *
- *  Copyright 2016 Jorge Cisneros
+ *  Copyright 2016-2018 Jorge Cisneros
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -39,12 +39,12 @@ mappings {
 }
 
 private getVendorName() 	{ "Remotsy" }
-private getVendorAuthPath()	{ "https://www.remotsy.com:8443/oauth/authorize?" }
-private getVendorTokenPath(){ "https://www.remotsy.com:8443/oauth/token" }
+private getVendorAuthPath()	{ "https://www.remotsy.com/oauth/authorize?" }
+private getVendorTokenPath(){ "https://www.remotsy.com/oauth/token" }
 private getClientId() 		{ "smartthings" } 
 private getClientSecret() 	{ "kjgsdfslskudfgj" }
 private getVendorIcon()		{ "https://s3.amazonaws.com/remotsy/remotsy_o.png" }
-private apiUrl() 			{ "https://remotsy.com/rest/" }
+private apiUrl() 			{ "https://remotsy.com:8443/rest/" }
 
 
 def authPage() {
@@ -64,6 +64,9 @@ def authPage() {
     }
 }
 
+def installed() {
+    log.debug "Installed"
+}
 def updated(){
     initialize()
 }
@@ -96,7 +99,7 @@ def initialize(){
                 try {
                     def existingDevice = getChildDevice(deviceId)
                     if(!existingDevice) {
-                        def childDevice = addChildDevice("remotsy", "Remotsy Control", deviceId, null, [name: it.name, label: it.name, iddev: it.iddev, completedSetup: true])
+                        def childDevice = addChildDevice("remotsy", "Remotsy Control", deviceId, null, [name: it.name, label: it.name, completedSetup: true])
                     }
                 } catch (e) {
                     log.error "Error creating device: ${e}"
@@ -119,7 +122,7 @@ def getDeviceList()
 	def deviceList = [:]
 	state.deviceDataArr = []
 
-	apiPost("controls/list") { response ->
+	apiPost("controls/list", [:]) { response ->
         response.data.data.controls.each() {
 				deviceList["${it._id}"] = it.name
 				state.deviceDataArr.push(['name'    : it.name,
@@ -240,8 +243,6 @@ def checkToken() {
 	log.debug "In checkToken"
     
     def tokenStatus = "bad"
-    
-    //check existing token by calling user device list
     try {
     	httpPost([ uri		: apiUrl(),
     		  	  path 		: "controls/list",
@@ -287,7 +288,7 @@ def checkToken() {
     }
 }
 
-def apiPost(String path, Closure callback)
+def apiPost(String path,Map query, Closure callback)
 {
 	log.debug "In apiPost with path: $path"
     
@@ -302,13 +303,31 @@ def apiPost(String path, Closure callback)
     	log.debug "Token is good. Call the command"
     }
     
-	httpPost([
+	httpPostJson([
 		uri : apiUrl(),
 		path : path,
+        body: query,
 		headers : [ 'Authorization' : 'Bearer ' + state.vendorAccessToken ]
 	])
 	{
 		response ->
 			callback.call(response)
 	}
+}
+
+
+def IRAction(cmd, IdDev) {
+	state.deviceDataArr.each {
+        if ( it.id == IdDev ) {
+            log.info it
+            def postdata = [
+                id_control : it.id,
+                cmd_txt    : cmd
+                ]
+            log.info postdata
+            apiPost("controls/control_blast", postdata){ response ->
+                log.info response.data
+			}
+        }
+    }
 }
