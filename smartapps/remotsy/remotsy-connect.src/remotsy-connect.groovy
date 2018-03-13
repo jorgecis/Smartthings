@@ -44,7 +44,7 @@ private getVendorTokenPath(){ "https://www.remotsy.com/oauth/token" }
 private getClientId() 		{ "smartthings" } 
 private getClientSecret() 	{ "kjgsdfslskudfgj" }
 private getVendorIcon()		{ "https://s3.amazonaws.com/remotsy/remotsy_o.png" }
-private apiUrl() 			{ "https://remotsy.com:8443/rest/" }
+private apiUrl() 			{ "https://remotsy.com/rest/" }
 
 
 def authPage() {
