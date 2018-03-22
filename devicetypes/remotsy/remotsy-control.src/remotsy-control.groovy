@@ -35,9 +35,10 @@ metadata {
             command "Exit"
 	}
 
-    standardTile("switch", "device.status", width: 1, height: 1, canChangeIcon: true) {
-        state "default", label:'', icon:"https://s3.amazonaws.com/remotsy/logo256.png", backgroundColor:"#ffffff"
+    standardTile("switch", "device.switch", width: 2, height: 2, canChangeIcon: true) {
+        state "default", label:'Power',  action:"power_toggle", icon:"https://s3.amazonaws.com/remotsy/logo256.png", backgroundColor:"#2a5ca0"
     }
+    
     standardTile("power", "device.switch", width: 1, height: 1, canChangeIcon: false) {
         state "default", label:'Power', action:"power_toggle", decoration: "flat", icon:"st.samsung.da.RC_ic_power", backgroundColor:"#ffffff"
     }   
