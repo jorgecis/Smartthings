@@ -35,7 +35,7 @@ metadata {
             command "Exit"
 	}
 
-    standardTile("switch", "device.switch", width: 2, height: 2, canChangeIcon: true) {
+    standardTile("switch", "generic", width: 2, height: 2, canChangeIcon: true) {
         state "default", label:'Power',  action:"power_toggle", icon:"https://s3.amazonaws.com/remotsy/logo256.png", backgroundColor:"#2a5ca0"
     }
     
@@ -106,17 +106,18 @@ metadata {
 
 def parse(String description) {
 	log.debug(description)
-    return null
 }
 
 def off() {
-	log.debug "Power OFF"
-    parent.IRAction("POWER OFF",device.deviceNetworkId) 
+	log.debug "Power OFF Event"
+    parent.IRAction("POWER OFF",device.deviceNetworkId)
+    sendEvent(name:"Command", value: "Power Off", displayed: true) 
 }
 
 def on() {
-	log.debug "Power ON"
+	log.debug "Power ON Event"
     parent.IRAction("POWER ON",device.deviceNetworkId) 
+    sendEvent(name:"Command", value: "Power On", displayed: true)
 }
 
 def power_toggle() {
