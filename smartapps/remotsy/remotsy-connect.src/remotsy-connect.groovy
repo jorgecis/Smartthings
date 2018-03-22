@@ -20,7 +20,7 @@ definition(
     namespace: "remotsy",
     author: "jorgecis@gmail.com",
     description: "Manager from Remotsy",
-    category: "My Apps",
+    category: "Convenience",
     iconUrl: "https://s3.amazonaws.com/remotsy/logo256.png",
     iconX2Url: "https://s3.amazonaws.com/remotsy/logo512.png",
     oauth: true,
@@ -79,9 +79,9 @@ def listDevices()
 {
 	log.debug "In listDevices"
 	def devices = getDeviceList()
-	dynamicPage(name: "Credentials", title: "Choose devices", uninstall: true) {
-		section("Devices") {
-			input "devices", "enum", title: "Select Device(s)", required: false, multiple: true, options: devices
+	dynamicPage(name: "Credentials", title: "SmartThings is connected to Remotsy", uninstall: true) {
+		section("Remotsy controls") {
+			input "devices", "enum", title: "Select control(s)", required: false, multiple: true, options: devices
 		}
 	}
 }
